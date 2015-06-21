@@ -1,0 +1,83 @@
+---
+title: "Report for PML"
+author: "Jane"
+date: "06/21/2015"
+output: html_document
+---
+
+Set the working directory and read in the data
+```{r}
+setwd('F:\\0coursera\\pmljhu')
+data<-read.csv("pml-training.csv")
+finaltest<-read.csv("pml-testing.csv")
+```
+Data slicing 
+```{r}
+library(caret)
+set.seed(233)
+inTrain<-createDataPartition(y=data$classe,p=0.75,list=F)
+training<-data[inTrain,]
+testing<-data[-inTrain,]
+```
+Cleaning data: get rid of near zero value:
+```{r}
+dataNZV <- nearZeroVar(training, saveMetrics=TRUE)
+training1<-training[,!dataNZV$nzv]
+dim(training1) #to see if it works
+```
+Omit the first column(the serial number is no use for caculation)
+```{r}
+training1<-training1[-1]
+```
+Get rid of columns with too much NA(>50%)
+```{r}
+training2<-training1[, colSums(is.na(training1)) < nrow(training1) * 0.5]
+```
+Apply the same process to testing data
+```{r}
+clean1 <- colnames(training2)
+testing2<-testing[clean1]
+clean2<-colnames(training2[,-58])
+finaltest<-finaltest[clean2]
+```
+To enable decision tree built later,coerce the data into same type.The simple way here is first rbind one of the training dataframe(so the data type becomes the same), then omit the row we just added.
+```{r}
+finaltest <- rbind(training2[2, -58],finaltest) 
+finaltest<- finaltest[-1,]
+```
+Use parallel decision tree to do the classification
+```{r}
+library(doParallel)
+registerDoParallel()
+rf <- train(training2[,-58], training2$classe, method="parRF",tuneGrid=data.frame(mtry=3),trControl=trainControl(method="none"))
+
+predictinsample<-predict(rf, newdata=training2)
+resultsinsample <- confusionMatrix(predictinsample,training2$classe)
+```
+To see the results in sample:
+```{r}
+resultsinsample
+```
+Test the data in cross validation:
+```{r}
+predictTest <- predict(rf, newdata=testing2)
+results <- confusionMatrix(predictTest,testing2$classe)
+```
+To see the results in testing data: 
+```{r}
+results
+```
+Generating files for submit
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+prediction <- predict(rf, finaltest)
+pml_write_files(prediction)
+```
+
+#The out of sample error can be seen from "results"
